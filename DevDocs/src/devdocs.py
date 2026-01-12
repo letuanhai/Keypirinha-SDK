@@ -33,6 +33,7 @@ class DevDocs(kp.Plugin):
 
     API_BASE_URL = "https://devdocs.io"
     DOCS_LIST_URL = "https://devdocs.io/docs/docs.json"
+    ICON_CDN_URL = "https://cdn.jsdelivr.net/gh/freeCodeCamp/devdocs@main/public/icons/docs/{slug}/16.png"
 
     def __init__(self):
         super().__init__()
@@ -42,12 +43,17 @@ class DevDocs(kp.Plugin):
         self._cache_duration = 86400  # 24 hours
         self._max_suggestions = 50
         self._current_doc_index = {}
+        self._icon_handles = {}  # Cache for loaded icons
+        self._default_icon = None
 
     def on_start(self):
         """Initialize the plugin"""
         self._cache_dir = self.get_package_cache_path(True)
         self._load_settings()
         self._load_docs_list()
+
+        # Load default icon (book icon from Windows shell32.dll)
+        self._default_icon = self.load_icon(["@shell32.dll,-134"])
 
         # Set up actions for entries only (not for docsets)
         self.set_actions(self.ITEMCAT_ENTRY, [
@@ -65,7 +71,8 @@ class DevDocs(kp.Plugin):
                 short_desc="Search documentation on DevDocs.io",
                 target="devdocs",
                 args_hint=kp.ItemArgsHint.ACCEPTED,
-                hit_hint=kp.ItemHitHint.NOARGS)
+                hit_hint=kp.ItemHitHint.NOARGS,
+                icon_handle=self._default_icon)
         ]
         self.set_catalog(catalog)
 
@@ -191,6 +198,9 @@ class DevDocs(kp.Plugin):
             if doc['slug'] in self._preferred_docs:
                 short_desc = f"★ {short_desc}"
 
+            # Try to load icon for this docset
+            icon_handle = self._get_icon_for_docset(doc['slug'])
+
             suggestions.append(self.create_item(
                 category=self.ITEMCAT_DOC,
                 label=label,
@@ -199,6 +209,7 @@ class DevDocs(kp.Plugin):
                 args_hint=kp.ItemArgsHint.ACCEPTED,
                 hit_hint=kp.ItemHitHint.KEEPALL,
                 loop_on_suggest=True,
+                icon_handle=icon_handle,
                 data_bag=json.dumps(doc)))
 
         if not suggestions and user_input:
@@ -342,3 +353,53 @@ class DevDocs(kp.Plugin):
             self.err(traceback.format_exc())
             self._current_doc_index = {}
             return False
+
+    def _get_icon_for_docset(self, doc_slug):
+        """Load or download icon for a documentation set"""
+        # Check if already loaded
+        if doc_slug in self._icon_handles:
+            return self._icon_handles[doc_slug]
+
+        # Extract base slug (remove version part after ~)
+        base_slug = doc_slug.split('~')[0]
+
+        # Icon cache file path
+        icons_dir = os.path.join(self._cache_dir, "icons")
+        os.makedirs(icons_dir, exist_ok=True)
+        icon_file = os.path.join(icons_dir, f"{base_slug}.png")
+
+        # Try to load from cache first
+        if os.path.exists(icon_file):
+            try:
+                icon_handle = self.load_icon([f"cache://{self.package_full_name()}/icons/{base_slug}.png"])
+                if icon_handle:
+                    self._icon_handles[doc_slug] = icon_handle
+                    return icon_handle
+            except Exception as e:
+                self.dbg(f"Failed to load cached icon for {doc_slug}: {e}")
+
+        # Download icon
+        try:
+            url = self.ICON_CDN_URL.format(slug=base_slug)
+            self.dbg(f"Downloading icon for {doc_slug} from {url}")
+
+            opener = kpnet.build_urllib_opener()
+            with opener.open(url, timeout=5) as response:
+                icon_data = response.read()
+
+            # Save to cache
+            with open(icon_file, 'wb') as f:
+                f.write(icon_data)
+
+            # Load the icon
+            icon_handle = self.load_icon([f"cache://{self.package_full_name()}/icons/{base_slug}.png"])
+            if icon_handle:
+                self._icon_handles[doc_slug] = icon_handle
+                self.dbg(f"Successfully loaded icon for {doc_slug}")
+                return icon_handle
+
+        except Exception as e:
+            self.dbg(f"Failed to download icon for {doc_slug}: {e}")
+
+        # Return None if icon loading failed (will use default)
+        return None
