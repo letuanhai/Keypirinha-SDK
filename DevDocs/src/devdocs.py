@@ -39,12 +39,14 @@ class DevDocs(kp.Plugin):
         super().__init__()
         self._cache_dir = None
         self._docs_list = []
-        self._preferred_docs = []
+        self._favorite_docs = []
         self._cache_duration = 86400  # 24 hours
         self._max_suggestions = 50
         self._current_doc_index = {}
         self._icon_handles = {}  # Cache for loaded icons
         self._default_icon = None
+        self._plugin_label = "DevDocs"
+        self._catalog_favorites = False
 
     def on_start(self):
         """Initialize the plugin"""
@@ -53,7 +55,10 @@ class DevDocs(kp.Plugin):
         self._load_docs_list()
 
         # Load default icon (documentation icon from Windows shell32.dll)
-        self._default_icon = self.load_icon(["@shell32.dll,-171"])
+        self._default_icon = self.load_icon(["@shell32.dll,171"])
+
+        # Preload indexes for favorite docsets
+        self._preload_favorite_indexes()
 
         # Set up actions for entries only (not for docsets)
         self.set_actions(self.ITEMCAT_ENTRY, [
@@ -67,13 +72,54 @@ class DevDocs(kp.Plugin):
         catalog = [
             self.create_item(
                 category=kp.ItemCategory.KEYWORD,
-                label="DevDocs",
+                label=self._plugin_label,
                 short_desc="Search documentation on DevDocs.io",
                 target="devdocs",
                 args_hint=kp.ItemArgsHint.ACCEPTED,
                 hit_hint=kp.ItemHitHint.NOARGS,
                 icon_handle=self._default_icon)
         ]
+
+        # Add favorite docsets to main catalog if enabled
+        if self._catalog_favorites and self._favorite_docs:
+            for doc_slug in self._favorite_docs:
+                # Find the doc in the docs list
+                doc = self._find_doc_by_slug(doc_slug)
+                if not doc:
+                    continue
+
+                # Load the doc index
+                cache_file = os.path.join(self._cache_dir, f"{doc_slug}_index.json")
+                if not os.path.exists(cache_file):
+                    continue
+
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        doc_index = json.load(f)
+                except Exception as e:
+                    self.warn(f"Failed to load index for {doc_slug}: {e}")
+                    continue
+
+                entries = doc_index.get('entries', [])
+                if not entries:
+                    continue
+
+                # Get icon for this docset
+                docset_icon = self._get_icon_for_docset(doc_slug)
+
+                # Add entries to catalog
+                for entry in entries:
+                    url = f"{self.API_BASE_URL}/{doc_slug}/{entry['path']}"
+                    catalog.append(self.create_item(
+                        category=self.ITEMCAT_ENTRY,
+                        label=f"{self._plugin_label}-{doc['name']}: {entry['name']}",
+                        short_desc=entry.get('type', ''),
+                        target=url,
+                        args_hint=kp.ItemArgsHint.FORBIDDEN,
+                        hit_hint=kp.ItemHitHint.IGNORE,
+                        icon_handle=docset_icon,
+                        data_bag=json.dumps(entry)))
+
         self.set_catalog(catalog)
 
     def on_suggest(self, user_input, items_chain):
@@ -118,9 +164,15 @@ class DevDocs(kp.Plugin):
         # Load max suggestions
         self._max_suggestions = settings.get_int("max_suggestions", "main", fallback=50)
 
-        # Load preferred docs (comma-separated slugs)
-        preferred = settings.get("preferred_docs", "main", fallback="")
-        self._preferred_docs = [slug.strip() for slug in preferred.split(",") if slug.strip()]
+        # Load plugin label
+        self._plugin_label = settings.get("plugin_label", "main", fallback="DevDocs")
+
+        # Load favorite docs (comma-separated slugs)
+        favorite = settings.get("favorite_docs", "main", fallback="")
+        self._favorite_docs = [slug.strip() for slug in favorite.split(",") if slug.strip()]
+
+        # Load catalog_favorites option
+        self._catalog_favorites = settings.get_bool("catalog_favorites", "main", fallback=False)
 
     def _load_docs_list(self):
         """Load the list of available documentation sets"""
@@ -168,10 +220,10 @@ class DevDocs(kp.Plugin):
         suggestions = []
         search_terms = user_input.lower().split()
 
-        # Sort docs: preferred first, then by name
+        # Sort docs: favorite first, then by name
         def sort_key(doc):
-            is_preferred = doc['slug'] in self._preferred_docs
-            return (not is_preferred, doc['name'].lower())
+            is_favorite = doc['slug'] in self._favorite_docs
+            return (not is_favorite, doc['name'].lower())
 
         sorted_docs = sorted(self._docs_list, key=sort_key)
 
@@ -195,7 +247,7 @@ class DevDocs(kp.Plugin):
                 label += f" {doc['version']}"
 
             short_desc = f"{doc['type']}"
-            if doc['slug'] in self._preferred_docs:
+            if doc['slug'] in self._favorite_docs:
                 short_desc = f"★ {short_desc}"
 
             # Try to load icon for this docset
@@ -358,6 +410,58 @@ class DevDocs(kp.Plugin):
             self.err(traceback.format_exc())
             self._current_doc_index = {}
             return False
+
+    def _find_doc_by_slug(self, slug):
+        """Find a documentation set by its slug"""
+        for doc in self._docs_list:
+            if doc['slug'] == slug:
+                return doc
+        return None
+
+    def _preload_favorite_indexes(self):
+        """Preload indexes for favorite documentation sets"""
+        if not self._favorite_docs:
+            return
+
+        for doc_slug in self._favorite_docs:
+            # Check if already cached
+            cache_file = os.path.join(self._cache_dir, f"{doc_slug}_index.json")
+            if os.path.exists(cache_file):
+                file_age = time.time() - os.path.getmtime(cache_file)
+                if file_age < self._cache_duration:
+                    self.dbg(f"Index for {doc_slug} already cached")
+                    continue
+
+            # Check if we should terminate before downloading
+            if self.should_terminate(0):
+                self.dbg("Terminating - skipping favorite index preload")
+                return
+
+            # Download the index
+            self.info(f"Preloading index for favorite docset: {doc_slug}")
+            try:
+                url = f"{self.API_BASE_URL}/docs/{doc_slug}/index.json"
+                opener = kpnet.build_urllib_opener()
+                opener.addheaders = [('User-Agent', 'Keypirinha-DevDocs-Plugin')]
+
+                with opener.open(url, timeout=30) as response:
+                    data = response.read()
+                    doc_index = json.loads(data.decode('utf-8'))
+
+                # Check again after download
+                if self.should_terminate(0):
+                    self.dbg("Terminating during favorite index download")
+                    return
+
+                # Save to cache
+                os.makedirs(self._cache_dir, exist_ok=True)
+                with open(cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(doc_index, f, ensure_ascii=False, indent=2)
+
+                self.info(f"Preloaded {len(doc_index.get('entries', []))} entries for {doc_slug}")
+
+            except Exception as e:
+                self.warn(f"Failed to preload index for {doc_slug}: {e}")
 
     def _get_icon_for_docset(self, doc_slug):
         """Load or download icon for a documentation set"""
