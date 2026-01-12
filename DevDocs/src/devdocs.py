@@ -211,12 +211,28 @@ class DevDocs(kp.Plugin):
         """Suggest entries from a specific documentation set"""
         doc_slug = doc_item.target()
 
+        # Show loading message while fetching
+        cache_file = os.path.join(self._cache_dir, f"{doc_slug}_index.json")
+        needs_download = not os.path.exists(cache_file)
+        if needs_download or (os.path.exists(cache_file) and
+                              time.time() - os.path.getmtime(cache_file) >= self._cache_duration):
+            # Show loading indicator
+            self.set_suggestions([
+                self.create_item(
+                    category=kp.ItemCategory.REFERENCE,
+                    label="Loading documentation index...",
+                    short_desc=f"Fetching entries for {doc_slug}",
+                    target="loading",
+                    args_hint=kp.ItemArgsHint.FORBIDDEN,
+                    hit_hint=kp.ItemHitHint.IGNORE)
+            ])
+
         # Load the documentation index
         if not self._load_doc_index(doc_slug):
             self.set_suggestions([
                 self.create_error_item(
                     label="Failed to load documentation",
-                    short_desc="Could not fetch the documentation index")
+                    short_desc="Could not fetch the documentation index. Check your internet connection.")
             ])
             return
 
@@ -287,6 +303,7 @@ class DevDocs(kp.Plugin):
                 try:
                     with open(cache_file, 'r', encoding='utf-8') as f:
                         self._current_doc_index = json.load(f)
+                    self.dbg(f"Loaded {len(self._current_doc_index.get('entries', []))} entries for {doc_slug} from cache")
                     return True
                 except Exception as e:
                     self.warn(f"Failed to load index cache for {doc_slug}: {e}")
@@ -294,19 +311,33 @@ class DevDocs(kp.Plugin):
         # Fetch fresh data
         try:
             url = f"{self.API_BASE_URL}/docs/{doc_slug}/index.json"
-            self.info(f"Fetching index for {doc_slug}...")
+            self.info(f"Fetching index for {doc_slug} from {url}...")
+
             opener = kpnet.build_urllib_opener()
-            with opener.open(url, timeout=10) as response:
+            opener.addheaders = [('User-Agent', 'Keypirinha-DevDocs-Plugin')]
+
+            with opener.open(url, timeout=30) as response:
                 data = response.read()
                 self._current_doc_index = json.loads(data.decode('utf-8'))
 
             # Save to cache
+            os.makedirs(self._cache_dir, exist_ok=True)
             with open(cache_file, 'w', encoding='utf-8') as f:
                 json.dump(self._current_doc_index, f, ensure_ascii=False, indent=2)
 
-            self.info(f"Loaded {len(self._current_doc_index.get('entries', []))} entries for {doc_slug}")
+            entries_count = len(self._current_doc_index.get('entries', []))
+            self.info(f"Successfully loaded {entries_count} entries for {doc_slug}")
             return True
+        except urllib.error.HTTPError as e:
+            self.err(f"HTTP Error fetching {doc_slug}: {e.code} {e.reason}")
+            self._current_doc_index = {}
+            return False
+        except urllib.error.URLError as e:
+            self.err(f"URL Error fetching {doc_slug}: {e.reason}")
+            self._current_doc_index = {}
+            return False
         except Exception as e:
             self.err(f"Failed to fetch index for {doc_slug}: {e}")
+            self.err(traceback.format_exc())
             self._current_doc_index = {}
             return False
