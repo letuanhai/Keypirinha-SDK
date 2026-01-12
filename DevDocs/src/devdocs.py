@@ -88,37 +88,25 @@ class DevDocs(kp.Plugin):
                 if not doc:
                     continue
 
-                # Load the doc index
-                cache_file = os.path.join(self._cache_dir, f"{doc_slug}_index.json")
-                if not os.path.exists(cache_file):
-                    continue
-
-                try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
-                        doc_index = json.load(f)
-                except Exception as e:
-                    self.warn(f"Failed to load index for {doc_slug}: {e}")
-                    continue
-
-                entries = doc_index.get('entries', [])
-                if not entries:
-                    continue
-
                 # Get icon for this docset
                 docset_icon = self._get_icon_for_docset(doc_slug)
 
-                # Add entries to catalog
-                for entry in entries:
-                    url = f"{self.API_BASE_URL}/{doc_slug}/{entry['path']}"
-                    catalog.append(self.create_item(
-                        category=self.ITEMCAT_ENTRY,
-                        label=f"{self._plugin_label}-{doc['name']}: {entry['name']}",
-                        short_desc=entry.get('type', ''),
-                        target=url,
-                        args_hint=kp.ItemArgsHint.FORBIDDEN,
-                        hit_hint=kp.ItemHitHint.IGNORE,
-                        icon_handle=docset_icon,
-                        data_bag=json.dumps(entry)))
+                # Create label
+                label = f"{self._plugin_label}-{doc['name']}"
+                if doc.get('version'):
+                    label += f" {doc['version']}"
+
+                # Add the docset entry to catalog
+                catalog.append(self.create_item(
+                    category=self.ITEMCAT_DOC,
+                    label=label,
+                    short_desc=f"★ {doc['type']}",
+                    target=doc_slug,
+                    args_hint=kp.ItemArgsHint.ACCEPTED,
+                    hit_hint=kp.ItemHitHint.KEEPALL,
+                    loop_on_suggest=True,
+                    icon_handle=docset_icon,
+                    data_bag=json.dumps(doc)))
 
         self.set_catalog(catalog)
 
