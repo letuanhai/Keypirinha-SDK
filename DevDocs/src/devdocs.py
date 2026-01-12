@@ -33,7 +33,7 @@ class DevDocs(kp.Plugin):
 
     API_BASE_URL = "https://devdocs.io"
     DOCS_LIST_URL = "https://devdocs.io/docs/docs.json"
-    ICON_CDN_URL = "https://cdn.jsdelivr.net/gh/freeCodeCamp/devdocs@main/public/icons/docs/{slug}/16.png"
+    ICON_CDN_URL = "https://cdn.jsdelivr.net/gh/freeCodeCamp/devdocs@main/public/icons/docs/{slug}/16@2x.png"
 
     def __init__(self):
         super().__init__()
@@ -52,8 +52,8 @@ class DevDocs(kp.Plugin):
         self._load_settings()
         self._load_docs_list()
 
-        # Load default icon (book icon from Windows shell32.dll)
-        self._default_icon = self.load_icon(["@shell32.dll,-134"])
+        # Load default icon (documentation icon from Windows shell32.dll)
+        self._default_icon = self.load_icon(["@shell32.dll,-171"])
 
         # Set up actions for entries only (not for docsets)
         self.set_actions(self.ITEMCAT_ENTRY, [
@@ -258,6 +258,9 @@ class DevDocs(kp.Plugin):
             ])
             return
 
+        # Get the icon for this docset (will be used for all entries)
+        docset_icon = self._get_icon_for_docset(doc_slug)
+
         suggestions = []
         search_terms = user_input.lower().split() if user_input else []
 
@@ -282,6 +285,7 @@ class DevDocs(kp.Plugin):
                 target=url,
                 args_hint=kp.ItemArgsHint.FORBIDDEN,
                 hit_hint=kp.ItemHitHint.IGNORE,
+                icon_handle=docset_icon,
                 data_bag=json.dumps(entry)))
 
         if not suggestions:
@@ -300,6 +304,7 @@ class DevDocs(kp.Plugin):
                         target=url,
                         args_hint=kp.ItemArgsHint.FORBIDDEN,
                         hit_hint=kp.ItemHitHint.IGNORE,
+                        icon_handle=docset_icon,
                         data_bag=json.dumps(entry)))
 
         self.set_suggestions(suggestions, kp.Match.ANY, kp.Sort.NONE)
@@ -378,6 +383,11 @@ class DevDocs(kp.Plugin):
             except Exception as e:
                 self.dbg(f"Failed to load cached icon for {doc_slug}: {e}")
 
+        # Check if we should terminate before downloading
+        if self.should_terminate(0):
+            self.dbg(f"Skipping icon download for {doc_slug} - terminating")
+            return None
+
         # Download icon
         try:
             url = self.ICON_CDN_URL.format(slug=base_slug)
@@ -386,6 +396,11 @@ class DevDocs(kp.Plugin):
             opener = kpnet.build_urllib_opener()
             with opener.open(url, timeout=5) as response:
                 icon_data = response.read()
+
+            # Check again after download
+            if self.should_terminate(0):
+                self.dbg(f"Terminating during icon download for {doc_slug}")
+                return None
 
             # Save to cache
             with open(icon_file, 'wb') as f:
