@@ -236,7 +236,7 @@ class DevDocs(kp.Plugin):
 
             short_desc = f"{doc['type']}"
             if doc['slug'] in self._favorite_docs:
-                short_desc = f"DevDocs.io - {short_desc}"
+                short_desc = f"* {short_desc}"
 
             # Try to load icon for this docset
             icon_handle = self._get_icon_for_docset(doc['slug'])
@@ -255,7 +255,7 @@ class DevDocs(kp.Plugin):
         if not suggestions and user_input:
             suggestions.append(self.create_error_item(
                 label="No matching documentation found",
-                short_desc=f"Try a different search term"))
+                short_desc="Try a different search term"))
 
         self.set_suggestions(suggestions, kp.Match.ANY, kp.Sort.NONE)
 
