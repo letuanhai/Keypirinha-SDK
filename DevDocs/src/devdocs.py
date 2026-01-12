@@ -49,13 +49,7 @@ class DevDocs(kp.Plugin):
         self._load_settings()
         self._load_docs_list()
 
-        # Set up actions
-        self.set_actions(self.ITEMCAT_DOC, [
-            self.create_action(
-                name="open_home",
-                label="Open Homepage",
-                short_desc="Open the documentation homepage in your browser")])
-
+        # Set up actions for entries only (not for docsets)
         self.set_actions(self.ITEMCAT_ENTRY, [
             self.create_action(
                 name="copy_url",
@@ -91,21 +85,7 @@ class DevDocs(kp.Plugin):
 
     def on_execute(self, item, action):
         """Execute the selected item"""
-        if item.category() == self.ITEMCAT_DOC:
-            if action and action.name() == "open_home":
-                # Open the documentation homepage
-                doc_data = json.loads(item.data_bag())
-                if 'links' in doc_data and 'home' in doc_data['links']:
-                    kpu.shell_execute(doc_data['links']['home'])
-                else:
-                    # Default to DevDocs page
-                    url = f"{self.API_BASE_URL}/{doc_data['slug']}/"
-                    kpu.shell_execute(url)
-            else:
-                # Load and show entries for this doc (handled in on_suggest)
-                pass
-
-        elif item.category() == self.ITEMCAT_ENTRY:
+        if item.category() == self.ITEMCAT_ENTRY:
             if action and action.name() == "copy_url":
                 # Copy URL to clipboard
                 kpu.set_clipboard(item.target())

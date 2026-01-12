@@ -70,13 +70,13 @@ devdocs react > hooks
 
 ### Actions
 
-When viewing documentation sets:
-- **Enter**: Browse entries in the documentation
-- **Alt+Home**: Open the documentation homepage in browser
+**When viewing documentation sets:**
+- **Enter**: Browse entries in the documentation (shows entry list)
+- Type to search/filter entries
 
-When viewing entries:
+**When viewing entries:**
 - **Enter**: Open the entry in your browser
-- **Ctrl+C**: Copy the documentation URL to clipboard
+- **Tab** then select "Copy URL": Copy the documentation URL to clipboard
 
 ## Configuration
 
