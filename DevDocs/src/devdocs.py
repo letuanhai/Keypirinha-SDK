@@ -198,6 +198,7 @@ class DevDocs(kp.Plugin):
                 target=doc['slug'],
                 args_hint=kp.ItemArgsHint.ACCEPTED,
                 hit_hint=kp.ItemHitHint.KEEPALL,
+                loop_on_suggest=True,
                 data_bag=json.dumps(doc)))
 
         if not suggestions and user_input:
