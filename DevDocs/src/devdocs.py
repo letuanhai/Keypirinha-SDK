@@ -217,7 +217,7 @@ class DevDocs(kp.Plugin):
                 short_desc=short_desc,
                 target=doc['slug'],
                 args_hint=kp.ItemArgsHint.ACCEPTED,
-                hit_hint=kp.ItemHitHint.NOARGS,
+                hit_hint=kp.ItemHitHint.KEEPALL,
                 data_bag=json.dumps(doc)))
 
         if not suggestions and user_input:
