@@ -100,7 +100,7 @@ class DevDocs(kp.Plugin):
                 catalog.append(self.create_item(
                     category=self.ITEMCAT_DOC,
                     label=label,
-                    short_desc=f"★ {doc['type']}",
+                    short_desc=f"DevDocs.io - {doc['type']}",
                     target=doc_slug,
                     args_hint=kp.ItemArgsHint.ACCEPTED,
                     hit_hint=kp.ItemHitHint.KEEPALL,
@@ -236,7 +236,7 @@ class DevDocs(kp.Plugin):
 
             short_desc = f"{doc['type']}"
             if doc['slug'] in self._favorite_docs:
-                short_desc = f"★ {short_desc}"
+                short_desc = f"DevDocs.io - {short_desc}"
 
             # Try to load icon for this docset
             icon_handle = self._get_icon_for_docset(doc['slug'])
@@ -332,7 +332,7 @@ class DevDocs(kp.Plugin):
             if user_input:
                 suggestions.append(self.create_error_item(
                     label="No matching entries found",
-                    short_desc=f"Try a different search term"))
+                    short_desc="Try a different search term"))
             else:
                 # Show first few entries as examples
                 for entry in entries[:self._max_suggestions]:
