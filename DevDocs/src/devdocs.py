@@ -11,6 +11,7 @@ import traceback
 import urllib.parse
 import urllib.error
 
+
 class DevDocs(kp.Plugin):
     """
     Search and browse documentation from DevDocs.io
@@ -61,11 +62,28 @@ class DevDocs(kp.Plugin):
         self._preload_favorite_indexes()
 
         # Set up actions for entries only (not for docsets)
-        self.set_actions(self.ITEMCAT_ENTRY, [
-            self.create_action(
-                name="copy_url",
-                label="Copy URL",
-                short_desc="Copy the documentation URL to clipboard")])
+        self.set_actions(
+            self.ITEMCAT_ENTRY,
+            [
+                self.create_action(
+                    name="copy_url",
+                    label="Copy URL",
+                    short_desc="Copy the documentation URL to clipboard",
+                )
+            ],
+        )
+
+        # Set up actions for docsets
+        self.set_actions(
+            self.ITEMCAT_DOC,
+            [
+                self.create_action(
+                    name="copy_doc_info",
+                    label="Copy docset info",
+                    short_desc="Copy the docset's information to clipboard",
+                )
+            ],
+        )
 
     def on_catalog(self):
         """Build the initial catalog"""
@@ -77,7 +95,8 @@ class DevDocs(kp.Plugin):
                 target="devdocs",
                 args_hint=kp.ItemArgsHint.ACCEPTED,
                 hit_hint=kp.ItemHitHint.NOARGS,
-                icon_handle=self._default_icon)
+                icon_handle=self._default_icon,
+            )
         ]
 
         # Add favorite docsets to main catalog if enabled
@@ -93,20 +112,23 @@ class DevDocs(kp.Plugin):
 
                 # Create label
                 label = f"{self._plugin_label}-{doc['name']}"
-                if doc.get('version'):
+                if doc.get("version"):
                     label += f" {doc['version']}"
 
                 # Add the docset entry to catalog
-                catalog.append(self.create_item(
-                    category=self.ITEMCAT_DOC,
-                    label=label,
-                    short_desc=f"DevDocs.io - {doc['type']}",
-                    target=doc_slug,
-                    args_hint=kp.ItemArgsHint.ACCEPTED,
-                    hit_hint=kp.ItemHitHint.KEEPALL,
-                    loop_on_suggest=True,
-                    icon_handle=docset_icon,
-                    data_bag=json.dumps(doc)))
+                catalog.append(
+                    self.create_item(
+                        category=self.ITEMCAT_DOC,
+                        label=label,
+                        short_desc=f"DevDocs.io - {doc['type']}",
+                        target=doc_slug,
+                        args_hint=kp.ItemArgsHint.ACCEPTED,
+                        hit_hint=kp.ItemHitHint.KEEPALL,
+                        loop_on_suggest=True,
+                        icon_handle=docset_icon,
+                        data_bag=json.dumps(doc),
+                    )
+                )
 
         self.set_catalog(catalog)
 
@@ -133,6 +155,12 @@ class DevDocs(kp.Plugin):
             else:
                 # Open the documentation entry
                 kpu.shell_execute(item.target())
+        elif (
+            item.category() == self.ITEMCAT_DOC
+            and action
+            and action.name() == "copy_doc_info"
+        ):
+            kpu.set_clipboard(item.data_bag())
 
     def on_events(self, flags):
         """Handle plugin events"""
@@ -157,10 +185,14 @@ class DevDocs(kp.Plugin):
 
         # Load favorite docs (comma-separated slugs)
         favorite = settings.get("favorite_docs", "main", fallback="")
-        self._favorite_docs = [slug.strip() for slug in favorite.split(",") if slug.strip()]
+        self._favorite_docs = [
+            slug.strip() for slug in favorite.split(",") if slug.strip()
+        ]
 
         # Load catalog_favorites option
-        self._catalog_favorites = settings.get_bool("catalog_favorites", "main", fallback=False)
+        self._catalog_favorites = settings.get_bool(
+            "catalog_favorites", "main", fallback=False
+        )
 
     def _load_docs_list(self):
         """Load the list of available documentation sets"""
@@ -171,7 +203,7 @@ class DevDocs(kp.Plugin):
             file_age = time.time() - os.path.getmtime(cache_file)
             if file_age < self._cache_duration:
                 try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
+                    with open(cache_file, "r", encoding="utf-8") as f:
                         self._docs_list = json.load(f)
                     self.dbg(f"Loaded {len(self._docs_list)} docs from cache")
                     return
@@ -184,10 +216,10 @@ class DevDocs(kp.Plugin):
             opener = kpnet.build_urllib_opener()
             with opener.open(self.DOCS_LIST_URL, timeout=10) as response:
                 data = response.read()
-                self._docs_list = json.loads(data.decode('utf-8'))
+                self._docs_list = json.loads(data.decode("utf-8"))
 
             # Save to cache
-            with open(cache_file, 'w', encoding='utf-8') as f:
+            with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(self._docs_list, f, ensure_ascii=False, indent=2)
 
             self.info(f"Loaded {len(self._docs_list)} documentation sets")
@@ -198,11 +230,14 @@ class DevDocs(kp.Plugin):
     def _suggest_docs(self, user_input):
         """Suggest documentation sets based on user input"""
         if not self._docs_list:
-            self.set_suggestions([
-                self.create_error_item(
-                    label="No documentation sets available",
-                    short_desc="Failed to load documentation list from DevDocs")
-            ])
+            self.set_suggestions(
+                [
+                    self.create_error_item(
+                        label="No documentation sets available",
+                        short_desc="Failed to load documentation list from DevDocs",
+                    )
+                ]
+            )
             return
 
         suggestions = []
@@ -210,8 +245,8 @@ class DevDocs(kp.Plugin):
 
         # Sort docs: favorite first, then by name
         def sort_key(doc):
-            is_favorite = doc['slug'] in self._favorite_docs
-            return (not is_favorite, doc['name'].lower())
+            is_favorite = doc["slug"] in self._favorite_docs
+            return (not is_favorite, doc["name"].lower())
 
         sorted_docs = sorted(self._docs_list, key=sort_key)
 
@@ -223,39 +258,45 @@ class DevDocs(kp.Plugin):
             # Check if doc matches search terms
             if search_terms:
                 searchable_text = f"{doc['name']} {doc.get('slug', '')}".lower()
-                if doc.get('aliases'):
+                if doc.get("aliases"):
                     searchable_text += f" {' '.join(doc['aliases'])}"
 
                 if not all(term in searchable_text for term in search_terms):
                     continue
 
             # Create suggestion item
-            label = doc['name']
-            if doc.get('version'):
+            label = doc["name"]
+            if doc.get("version"):
                 label += f" {doc['version']}"
 
             short_desc = f"{doc['type']}"
-            if doc['slug'] in self._favorite_docs:
+            if doc["slug"] in self._favorite_docs:
                 short_desc = f"* {short_desc}"
 
             # Try to load icon for this docset
-            icon_handle = self._get_icon_for_docset(doc['slug'])
+            icon_handle = self._get_icon_for_docset(doc["slug"])
 
-            suggestions.append(self.create_item(
-                category=self.ITEMCAT_DOC,
-                label=label,
-                short_desc=short_desc,
-                target=doc['slug'],
-                args_hint=kp.ItemArgsHint.ACCEPTED,
-                hit_hint=kp.ItemHitHint.KEEPALL,
-                loop_on_suggest=True,
-                icon_handle=icon_handle,
-                data_bag=json.dumps(doc)))
+            suggestions.append(
+                self.create_item(
+                    category=self.ITEMCAT_DOC,
+                    label=label,
+                    short_desc=short_desc,
+                    target=doc["slug"],
+                    args_hint=kp.ItemArgsHint.ACCEPTED,
+                    hit_hint=kp.ItemHitHint.KEEPALL,
+                    loop_on_suggest=True,
+                    icon_handle=icon_handle,
+                    data_bag=json.dumps(doc),
+                )
+            )
 
         if not suggestions and user_input:
-            suggestions.append(self.create_error_item(
-                label="No matching documentation found",
-                short_desc="Try a different search term"))
+            suggestions.append(
+                self.create_error_item(
+                    label="No matching documentation found",
+                    short_desc="Try a different search term",
+                )
+            )
 
         self.set_suggestions(suggestions, kp.Match.ANY, kp.Sort.NONE)
 
@@ -266,36 +307,47 @@ class DevDocs(kp.Plugin):
         # Show loading message while fetching
         cache_file = os.path.join(self._cache_dir, f"{doc_slug}_index.json")
         needs_download = not os.path.exists(cache_file)
-        if needs_download or (os.path.exists(cache_file) and
-                              time.time() - os.path.getmtime(cache_file) >= self._cache_duration):
+        if needs_download or (
+            os.path.exists(cache_file)
+            and time.time() - os.path.getmtime(cache_file) >= self._cache_duration
+        ):
             # Show loading indicator
-            self.set_suggestions([
-                self.create_item(
-                    category=kp.ItemCategory.REFERENCE,
-                    label="Loading documentation index...",
-                    short_desc=f"Fetching entries for {doc_slug}",
-                    target="loading",
-                    args_hint=kp.ItemArgsHint.FORBIDDEN,
-                    hit_hint=kp.ItemHitHint.IGNORE)
-            ])
+            self.set_suggestions(
+                [
+                    self.create_item(
+                        category=kp.ItemCategory.REFERENCE,
+                        label="Loading documentation index...",
+                        short_desc=f"Fetching entries for {doc_slug}",
+                        target="loading",
+                        args_hint=kp.ItemArgsHint.FORBIDDEN,
+                        hit_hint=kp.ItemHitHint.IGNORE,
+                    )
+                ]
+            )
 
         # Load the documentation index
         if not self._load_doc_index(doc_slug):
-            self.set_suggestions([
-                self.create_error_item(
-                    label="Failed to load documentation",
-                    short_desc="Could not fetch the documentation index. Check your internet connection.")
-            ])
+            self.set_suggestions(
+                [
+                    self.create_error_item(
+                        label="Failed to load documentation",
+                        short_desc="Could not fetch the documentation index. Check your internet connection.",
+                    )
+                ]
+            )
             return
 
-        entries = self._current_doc_index.get('entries', [])
+        entries = self._current_doc_index.get("entries", [])
 
         if not entries:
-            self.set_suggestions([
-                self.create_error_item(
-                    label="No entries found",
-                    short_desc="This documentation set appears to be empty")
-            ])
+            self.set_suggestions(
+                [
+                    self.create_error_item(
+                        label="No entries found",
+                        short_desc="This documentation set appears to be empty",
+                    )
+                ]
+            )
             return
 
         # Get the icon for this docset (will be used for all entries)
@@ -318,34 +370,43 @@ class DevDocs(kp.Plugin):
             # Create suggestion item
             url = f"{self.API_BASE_URL}/{doc_slug}/{entry['path']}"
 
-            suggestions.append(self.create_item(
-                category=self.ITEMCAT_ENTRY,
-                label=entry['name'],
-                short_desc=entry.get('type', ''),
-                target=url,
-                args_hint=kp.ItemArgsHint.FORBIDDEN,
-                hit_hint=kp.ItemHitHint.IGNORE,
-                icon_handle=docset_icon,
-                data_bag=json.dumps(entry)))
+            suggestions.append(
+                self.create_item(
+                    category=self.ITEMCAT_ENTRY,
+                    label=entry["name"],
+                    short_desc=entry.get("type", ""),
+                    target=url,
+                    args_hint=kp.ItemArgsHint.FORBIDDEN,
+                    hit_hint=kp.ItemHitHint.IGNORE,
+                    icon_handle=docset_icon,
+                    data_bag=json.dumps(entry),
+                )
+            )
 
         if not suggestions:
             if user_input:
-                suggestions.append(self.create_error_item(
-                    label="No matching entries found",
-                    short_desc="Try a different search term"))
+                suggestions.append(
+                    self.create_error_item(
+                        label="No matching entries found",
+                        short_desc="Try a different search term",
+                    )
+                )
             else:
                 # Show first few entries as examples
-                for entry in entries[:self._max_suggestions]:
+                for entry in entries[: self._max_suggestions]:
                     url = f"{self.API_BASE_URL}/{doc_slug}/{entry['path']}"
-                    suggestions.append(self.create_item(
-                        category=self.ITEMCAT_ENTRY,
-                        label=entry['name'],
-                        short_desc=entry.get('type', ''),
-                        target=url,
-                        args_hint=kp.ItemArgsHint.FORBIDDEN,
-                        hit_hint=kp.ItemHitHint.IGNORE,
-                        icon_handle=docset_icon,
-                        data_bag=json.dumps(entry)))
+                    suggestions.append(
+                        self.create_item(
+                            category=self.ITEMCAT_ENTRY,
+                            label=entry["name"],
+                            short_desc=entry.get("type", ""),
+                            target=url,
+                            args_hint=kp.ItemArgsHint.FORBIDDEN,
+                            hit_hint=kp.ItemHitHint.IGNORE,
+                            icon_handle=docset_icon,
+                            data_bag=json.dumps(entry),
+                        )
+                    )
 
         self.set_suggestions(suggestions, kp.Match.ANY, kp.Sort.NONE)
 
@@ -358,9 +419,11 @@ class DevDocs(kp.Plugin):
             file_age = time.time() - os.path.getmtime(cache_file)
             if file_age < self._cache_duration:
                 try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
+                    with open(cache_file, "r", encoding="utf-8") as f:
                         self._current_doc_index = json.load(f)
-                    self.dbg(f"Loaded {len(self._current_doc_index.get('entries', []))} entries for {doc_slug} from cache")
+                    self.dbg(
+                        f"Loaded {len(self._current_doc_index.get('entries', []))} entries for {doc_slug} from cache"
+                    )
                     return True
                 except Exception as e:
                     self.warn(f"Failed to load index cache for {doc_slug}: {e}")
@@ -371,18 +434,18 @@ class DevDocs(kp.Plugin):
             self.info(f"Fetching index for {doc_slug} from {url}...")
 
             opener = kpnet.build_urllib_opener()
-            opener.addheaders = [('User-Agent', 'Keypirinha-DevDocs-Plugin')]
+            opener.addheaders = [("User-Agent", "Keypirinha-DevDocs-Plugin")]
 
             with opener.open(url, timeout=30) as response:
                 data = response.read()
-                self._current_doc_index = json.loads(data.decode('utf-8'))
+                self._current_doc_index = json.loads(data.decode("utf-8"))
 
             # Save to cache
             os.makedirs(self._cache_dir, exist_ok=True)
-            with open(cache_file, 'w', encoding='utf-8') as f:
+            with open(cache_file, "w", encoding="utf-8") as f:
                 json.dump(self._current_doc_index, f, ensure_ascii=False, indent=2)
 
-            entries_count = len(self._current_doc_index.get('entries', []))
+            entries_count = len(self._current_doc_index.get("entries", []))
             self.info(f"Successfully loaded {entries_count} entries for {doc_slug}")
             return True
         except urllib.error.HTTPError as e:
@@ -402,7 +465,7 @@ class DevDocs(kp.Plugin):
     def _find_doc_by_slug(self, slug):
         """Find a documentation set by its slug"""
         for doc in self._docs_list:
-            if doc['slug'] == slug:
+            if doc["slug"] == slug:
                 return doc
         return None
 
@@ -430,11 +493,11 @@ class DevDocs(kp.Plugin):
             try:
                 url = f"{self.API_BASE_URL}/docs/{doc_slug}/index.json"
                 opener = kpnet.build_urllib_opener()
-                opener.addheaders = [('User-Agent', 'Keypirinha-DevDocs-Plugin')]
+                opener.addheaders = [("User-Agent", "Keypirinha-DevDocs-Plugin")]
 
                 with opener.open(url, timeout=30) as response:
                     data = response.read()
-                    doc_index = json.loads(data.decode('utf-8'))
+                    doc_index = json.loads(data.decode("utf-8"))
 
                 # Check again after download
                 if self.should_terminate(0):
@@ -443,10 +506,12 @@ class DevDocs(kp.Plugin):
 
                 # Save to cache
                 os.makedirs(self._cache_dir, exist_ok=True)
-                with open(cache_file, 'w', encoding='utf-8') as f:
+                with open(cache_file, "w", encoding="utf-8") as f:
                     json.dump(doc_index, f, ensure_ascii=False, indent=2)
 
-                self.info(f"Preloaded {len(doc_index.get('entries', []))} entries for {doc_slug}")
+                self.info(
+                    f"Preloaded {len(doc_index.get('entries', []))} entries for {doc_slug}"
+                )
 
             except Exception as e:
                 self.warn(f"Failed to preload index for {doc_slug}: {e}")
@@ -458,7 +523,7 @@ class DevDocs(kp.Plugin):
             return self._icon_handles[doc_slug]
 
         # Extract base slug (remove version part after ~)
-        base_slug = doc_slug.split('~')[0]
+        base_slug = doc_slug.split("~")[0]
 
         # Icon cache file path
         icons_dir = os.path.join(self._cache_dir, "icons")
@@ -468,7 +533,9 @@ class DevDocs(kp.Plugin):
         # Try to load from cache first
         if os.path.exists(icon_file):
             try:
-                icon_handle = self.load_icon([f"cache://{self.package_full_name()}/icons/{base_slug}.png"])
+                icon_handle = self.load_icon(
+                    [f"cache://{self.package_full_name()}/icons/{base_slug}.png"]
+                )
                 if icon_handle:
                     self._icon_handles[doc_slug] = icon_handle
                     return icon_handle
@@ -495,11 +562,13 @@ class DevDocs(kp.Plugin):
                 return None
 
             # Save to cache
-            with open(icon_file, 'wb') as f:
+            with open(icon_file, "wb") as f:
                 f.write(icon_data)
 
             # Load the icon
-            icon_handle = self.load_icon([f"cache://{self.package_full_name()}/icons/{base_slug}.png"])
+            icon_handle = self.load_icon(
+                [f"cache://{self.package_full_name()}/icons/{base_slug}.png"]
+            )
             if icon_handle:
                 self._icon_handles[doc_slug] = icon_handle
                 self.dbg(f"Successfully loaded icon for {doc_slug}")
