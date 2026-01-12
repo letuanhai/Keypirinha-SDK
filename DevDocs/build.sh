@@ -34,10 +34,21 @@ build() {
     # Create a temporary directory for packaging
     TEMP_DIR=$(mktemp -d)
 
-    # Copy files to temp directory
-    cp -r "$SCRIPT_DIR/src" "$TEMP_DIR/"
+    # Copy files to temp directory (flattened - files at root, not in src/)
+    cp "$SCRIPT_DIR/src/"*.py "$TEMP_DIR/"
+    cp "$SCRIPT_DIR/src/"*.ini "$TEMP_DIR/"
     cp "$SCRIPT_DIR/LICENSE" "$TEMP_DIR/"
     cp "$SCRIPT_DIR/README.md" "$TEMP_DIR/"
+
+    # Convert .ini file to Windows line endings (CRLF) since plugin runs on Windows
+    if command -v unix2dos &> /dev/null; then
+        unix2dos "$TEMP_DIR/"*.ini 2>/dev/null
+    elif command -v dos2unix &> /dev/null; then
+        dos2unix -n "$TEMP_DIR/"*.ini "$TEMP_DIR/"*.ini 2>/dev/null || sed -i 's/$/\r/' "$TEMP_DIR/"*.ini
+    else
+        # Fallback: use sed to add CR
+        sed -i 's/$/\r/' "$TEMP_DIR/"*.ini
+    fi
 
     # Create the package (it's just a ZIP file with .keypirinha-package extension)
     cd "$TEMP_DIR"
@@ -54,6 +65,9 @@ build() {
     ABS_PATH=$(realpath "$SCRIPT_DIR/$BUILD_DIR/$PACKAGE_NAME.keypirinha-package")
 
     echo "Build complete: $ABS_PATH"
+    echo ""
+    echo "Package structure:"
+    unzip -l "$ABS_PATH" | grep -E "\.py|\.ini|LICENSE|README"
     echo ""
     echo "To install on Windows:"
     echo "  1. Copy the .keypirinha-package file to your Windows machine"

@@ -33,11 +33,28 @@ if "%1"=="clean" (
 
 if "%1"=="build" (
     if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
-    pushd "%~dp0"
-    call "%KEYPIRINHA_SDK%\cmd\kparch" ^
-        "%BUILD_DIR%\%PACKAGE_NAME%.keypirinha-package" ^
-        -r LICENSE* README* src
+
+    REM Create temporary directory for packaging
+    set TEMP_PKG_DIR=%TEMP%\keypirinha_build_%RANDOM%
+    mkdir "%TEMP_PKG_DIR%"
+
+    REM Copy files to temp directory (flattened structure - files at root)
+    copy /Y "%~dp0src\*.py" "%TEMP_PKG_DIR%\" > nul
+    copy /Y "%~dp0src\*.ini" "%TEMP_PKG_DIR%\" > nul
+    copy /Y "%~dp0LICENSE" "%TEMP_PKG_DIR%\" > nul
+    copy /Y "%~dp0README.md" "%TEMP_PKG_DIR%\" > nul
+
+    REM Package using Python's zipfile (kparch alternative)
+    pushd "%TEMP_PKG_DIR%"
+    "%KEYPIRINHA_SDK%\cmd\kpy" -m zipfile -c "%BUILD_DIR%\%PACKAGE_NAME%.keypirinha-package" *.py *.ini LICENSE README.md
     popd
+
+    REM Clean up temp directory
+    rmdir /s /q "%TEMP_PKG_DIR%"
+
+    echo Build complete: %BUILD_DIR%\%PACKAGE_NAME%.keypirinha-package
+    echo.
+    echo Note: .ini file already has Windows line endings (CRLF)
     goto end
 )
 
